@@ -5,6 +5,7 @@
 #include <sys/shm.h>
 #include <sys/ipc.h>
 
+#define MAX_R_CALLS 5
 
 void quickSort(int *array, int first, int last);
 

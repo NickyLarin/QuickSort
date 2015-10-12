@@ -67,9 +67,13 @@ int main()
 		char shmem_id_arg[10];
 		char l_arg[4];
 		char r_arg[4];
-		if(sprintf(shmem_id_arg, "%d", shmem_id) < 0 || sprintf(l_arg, "%d", 1) < 0 || sprintf(r_arg, "%d", (size_of_shmem/sizeof(shmem[0]))-1) < 0)
+		if(
+		sprintf(shmem_id_arg, "%d", shmem_id) < 0 || 
+		sprintf(l_arg, "%d", 1) < 0 || 
+		sprintf(r_arg, "%d", (size_of_shmem/sizeof(shmem[0]))-1) < 0)
 		{
 			printf("Error sprintf\n");
+			exit(EXIT_FAILURE)
 		}
 		execl("qsort" , shmem_id_arg, l_arg, r_arg, NULL);
 	}
