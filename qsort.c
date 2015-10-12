@@ -87,6 +87,7 @@ void quickSort(int *array, int first, int last)
 	}
 	while(l <= r);
 
+
 	if(l < last)
 	{
 		quickSort(array, l, last);
@@ -94,5 +95,25 @@ void quickSort(int *array, int first, int last)
 	if(first < r)
 	{
 		quickSort(array, first, r);
+	}
+}
+
+void createNewProc(int shmem_id, int l, int r)
+{
+	pid_t new_process = fork();
+	if(!new_process)
+	{
+		char shmem_id_arg[10];
+		char l_arg[4];
+		char r_arg[4];
+		if(
+		sprintf(shmem_id_arg, "%d", shmem_id) < 0 || 
+		sprintf(l_arg, "%d", l) < 0 || 
+		sprintf(r_arg, "%d", r)-1) < 0)
+		{
+			printf("Error sprintf\n");
+			exit(EXIT_FAILURE)
+		}
+		execl("qsort" , shmem_id_arg, l_arg, r_arg, NULL);
 	}
 }

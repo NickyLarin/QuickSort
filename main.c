@@ -62,7 +62,7 @@ int main()
 	pid_t quick_sort_proc_id = fork();
 
 	//Первый дочерний процесс, сортировка запускается в нём
-	if(quick_sort_proc_id == 0)
+	if(!quick_sort_proc_id)
 	{
 		char shmem_id_arg[10];
 		char l_arg[4];
