@@ -12,9 +12,6 @@
 
 #define MAX_PROC 5
 
-void quickSort(int *array, int first, int last, sem_t *sem);
-pid_t createNewProcess(int *proc_count, sem_t *sem);
-
 int main()
 {
 	//Массив для сортировки
@@ -62,13 +59,19 @@ int main()
 /////////////////////////////////////////////////////////////////////////////////
 
 	printf("Главный процесс: %d\n", getpid());
-	pid_t quick_sort_proc_id = createNewProcess(&(shmem[0]), sem);
+	pid_t quick_sort_proc_id = fork();
 
-	//Начало сортировки в дочернем процессе
-	if(!quick_sort_proc_id)
+	//Первый дочерний процесс, сортировка запускается в нём
+	if(quick_sort_proc_id == 0)
 	{
-		printf("Первый дочерний процесс: %d\n", getpid());
-		quickSort(shmem, 1, (size_of_shmem/sizeof(shmem[0]))-1, sem);
+		char shmem_id_arg[10];
+		char l_arg[4];
+		char r_arg[4];
+		if(sprintf(shmem_id_arg, "%d", shmem_id) < 0 || sprintf(l_arg, "%d", 1) < 0 || sprintf(r_arg, "%d", (size_of_shmem/sizeof(shmem[0]))-1) < 0)
+		{
+			printf("Error sprintf\n");
+		}
+		execl("qsort" , shmem_id_arg, l_arg, r_arg, NULL);
 	}
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -77,7 +80,7 @@ int main()
 	else
 	{
 		waitpid(quick_sort_proc_id, NULL, 0);
-
+		printf("Main stop waiting for qsort\n");
 		//Массив после сортировки
 		printf("Массив после сортировки: \n");
 		for(int i = 1; i < size_of_shmem/sizeof(shmem[0]); i++)
@@ -95,104 +98,4 @@ int main()
 	}
 
 	return 0;
-}
-
-//Создание нового процесса
-//При создании счётчик процессов уменьшается на 1 дочерним процессом
-//Доступ к счётчику контролируется семафором
-pid_t createNewProcess(int *proc_count, sem_t *sem)
-{
-	sem_wait(sem);
-	if(*proc_count > 0)
-	{
-		pid_t new_process_id = fork();
-		if(new_process_id > 0)
-		{
-			*proc_count -= 1;
-			sem_post(sem);
-			return new_process_id;
-		}
-		else if(new_process_id == 0)
-		{
-			printf("Процесс %d создан\n", getpid());
-			return (pid_t)0;
-		}
-		else
-		{
-			perror("New process fork error!");
-			exit(EXIT_FAILURE);
-		}
-	}
-	else
-	{
-		sem_post(sem);
-		return (pid_t)-1;
-	}
-}
-
-void swap(int *a, int *b)
-{
-	int temp = *a;
-	*a = *b;
-	*b = temp;
-}
-
-
-void quickSort(int *array, int first, int last, sem_t *sem)
-{
-	sem_wait(sem);
-	printf("Процесс: %d proc_count %d first: %d last: %d\n", getpid(), array[0], first, last);
-	sem_post(sem);
-	int l = first;
-	int r = last;
-	int pivot = array[(first + last) / 2];
-	
-	do
-	{
-		while(array[l] < pivot)
-		{
-			l++;
-		}
-		while(array[r] > pivot)
-		{
-			r--;
-		}
-	
-		if(l <= r)
-		{
-			if(array[l] >= array[r])
-			{
-				swap(&array[l], &array[r]);
-				l++;
-				r--;
-			}
-		}
-	}
-	while(l <= r);
-	
-	//Создаём дочерний процесс
-	pid_t new_process;
-	
-	//Если мы в дочернем процессе или кол-во процессов уже максимальное,
-	//то вызываем сортировку для левой части массиво
-	if(l < last)
-	{
-		new_process = createNewProcess(&(array[0]), sem);
-		if(new_process == 0 || new_process == -1)
-		{
-			quickSort(array, l, last, sem);
-		}
-	}
-	//В родительском процессе вызываем сортировку для правой части массива
-	if(first < r)
-	{
-		if(new_process > 0 || new_process == -1)
-		{
-			quickSort(array, first, r, sem);
-		}
-	}
-	if(new_process > 0)
-	{
-		waitpid(new_process, NULL, 0);
-	}
 }
