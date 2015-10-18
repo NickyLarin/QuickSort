@@ -17,15 +17,18 @@ struct SharedArgs
     int *semId;
     int *MAX_PROC;
     int *MAX_R_CALLS;
+    int rCallsCount;
 };
 typedef struct SharedArgs SharedArgs;
 
 struct sembuf lock = {0, -1, 0};
 struct sembuf unlock = {0, 1, 0};
 
-int createChildProcess(SharedArgs sharedArgs);
-void stopChildProcess(SharedArgs sharedArgs);
-void quickSort(int *array, int first, int last);
+int createChildProcess(SharedArgs *sharedArgs);
+void stopChildProcess(SharedArgs *sharedArgs);
+void quickSort(int *array, int first, int last, SharedArgs *sharedArgs);
+int lockSemaphore(int semId);
+int unlockSemaphore(int semId);
 
 int main(int argc, char *argv[])
 {
@@ -101,47 +104,31 @@ int main(int argc, char *argv[])
     sharedArgs.semId = &semId;
     sharedArgs.MAX_PROC = &MAX_PROC;
     sharedArgs.MAX_R_CALLS = &MAX_R_CALLS;
+    sharedArgs.rCallsCount = MAX_R_CALLS;
 /////////////////////////////////////////////////////////////////////////////////
 
     printf("Главный процесс: %d\n", getpid());
 
+    sharedArgs.rCallsCount -= 1;
+
     //Первый дочерний процесс, сортировка запускается в нём
-    int childProcess = createChildProcess(sharedArgs);
+    int childProcess = createChildProcess(&sharedArgs);
     if(childProcess == 0){
-        quickSort(&shMem[arrayBeginIndex], 0, arrayLength);
-        stopChildProcess(sharedArgs);
-        printf("Дочерний процесс завершен\n");
-        exit(EXIT_SUCCESS);
+        quickSort(&shMem[arrayBeginIndex], 0, arrayLength, &sharedArgs);
     }
 /////////////////////////////////////////////////////////////////////////////////
 
     //Продолжение работы главного процесса
     else{
-        sleep(5);
-        //Захват семафора
-        printf("before sem1 val %d\n", semctl(semId, 0, GETVAL, NULL));
-        if(semop(semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0)
-        {
-            perror("Error semop1");
-            exit(EXIT_FAILURE);
-        }
-        printf("after sem1 val %d\n", semctl(semId, 0, GETVAL, NULL));
-
+        printf("Main rCallsCount: %d\n", sharedArgs.rCallsCount);
         int status;
         printf("shMem[0] %d\nКол-во процессов %d\n", shMem[0], (MAX_PROC - shMem[0]));
-        for(int i = 0; i < (MAX_PROC - shMem[0]); i++)
+        lockSemaphore(semId);
+        while(shMem[0] < MAX_PROC)
         {
-            waitpid(0, &status, 0);
+            unlockSemaphore(semId);
+            wait(&status);
         }
-
-        //Разблокировка семафора
-        printf("before sem2 val %d\n", semctl(semId, 0, GETVAL, NULL));
-        if(semop(semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0)
-        {
-            perror("Error semop2");
-            exit(EXIT_FAILURE);
-        }
-        printf("after sem2 val %d\n", semctl(semId, 0, GETVAL, NULL));
 
         printf("Дождались завершения дочерних процессов\n");
 
@@ -166,41 +153,33 @@ int main(int argc, char *argv[])
 }
 
 //Создание нового процесса
-int createChildProcess(SharedArgs sharedArgs)
+int createChildProcess(SharedArgs *sharedArgs)
 {
     //Захват семафора
-    printf("before sem3 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
-    if(semop(*sharedArgs.semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0)
-    {
-        perror("Error semop3");
-        exit(EXIT_FAILURE);
-    }
-    printf("after sem3 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
+    lockSemaphore(*sharedArgs->semId);
+
+    //Уменьшаем счётчик процессов на один
+    sharedArgs->shMem[0] -= 1;
+
     pid_t newProcess = fork();
 
     //Дочерний процесс
     if(newProcess == 0){
-        sharedArgs.shMem[0] -= 1;
-        printf("shMem[0] in createProcess %d\n", sharedArgs.shMem[0]);
-        for(int i = 1; i < (1 + *sharedArgs.MAX_PROC); i++){
-            if(sharedArgs.shMem[i] == 0){
-                sharedArgs.shMem[i] = newProcess;
+        //Записываем Id процесса в общую память
+        for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
+            if(sharedArgs->shMem[i] == 0){
+                sharedArgs->shMem[i] = newProcess;
                 break;
             }
         }
+        sharedArgs->rCallsCount = *sharedArgs->MAX_R_CALLS;
         return(0);
     }
 
     //Родительский процесс
     else if(newProcess > 0){
         //Разблокировка семафора
-        printf("before sem4 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
-        if(semop(*sharedArgs.semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0)
-        {
-            perror("Error semop4");
-            exit(EXIT_FAILURE);
-        }
-        printf("after sem4 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
+        unlockSemaphore(*sharedArgs->semId);
         return(1);
     }
 
@@ -211,33 +190,22 @@ int createChildProcess(SharedArgs sharedArgs)
 }
 
 //Завершение работы дочернего процесса
-void stopChildProcess(SharedArgs sharedArgs)
+void stopChildProcess(SharedArgs *sharedArgs)
 {
     //Захват семафора
-    printf("before sem5 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
-    if(semop(*sharedArgs.semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0)
-    {
-        perror("Error semop5");
-        exit(EXIT_FAILURE);
-    }
-    printf("after sem5 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
-    sharedArgs.shMem[0] += 1;
+    lockSemaphore(*sharedArgs->semId);
+
+    sharedArgs->shMem[0] += 1;
     int currentPId = getpid();
-    for(int i = 1; i < (1 + *sharedArgs.MAX_PROC); i++){
-        if(sharedArgs.shMem[i] == currentPId){
-            sharedArgs.shMem[i] = 0;
+    for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
+        if(sharedArgs->shMem[i] == currentPId){
+            sharedArgs->shMem[i] = 0;
             break;
         }
     }
 
     //Разблокировка семафора
-    printf("before sem6 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
-    if(semop(*sharedArgs.semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0)
-    {
-        perror("Error semop6");
-        exit(EXIT_FAILURE);
-    }
-    printf("after sem6 val %d\n", semctl(*sharedArgs.semId, 0, GETVAL, NULL));
+    unlockSemaphore(*sharedArgs->semId);
 }
 
 void swap(int *a, int *b)
@@ -248,8 +216,9 @@ void swap(int *a, int *b)
 }
 
 //Быстрая сортировка
-void quickSort(int *array, int first, int last)
+void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
 {
+    sharedArgs->rCallsCount -= 1;
     int l = first;
     int r = last;
     int pivot = array[(first + last) / 2];
@@ -274,9 +243,38 @@ void quickSort(int *array, int first, int last)
 
 
     if(l < last){
-        quickSort(array, l, last);
+        quickSort(array, l, last, sharedArgs);
     }
     if(first < r){
-        quickSort(array, first, r);
+        quickSort(array, first, r, sharedArgs);
     }
+    sharedArgs->rCallsCount += 1;
+    if(sharedArgs->rCallsCount == *sharedArgs->MAX_R_CALLS)
+    {
+        stopChildProcess(sharedArgs);
+        printf("Дочерний процесс завершен\n");
+        exit(EXIT_SUCCESS);
+    }
+}
+
+int lockSemaphore(int semId)
+{
+    //Захват семафора
+    if(semop(semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0)
+    {
+        perror("Error semop");
+        exit(EXIT_FAILURE);
+    }
+    return 0;
+}
+
+int unlockSemaphore(int semId)
+{
+    //Разблокировка семафора
+    if(semop(semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0)
+    {
+        perror("Error semop");
+        exit(EXIT_FAILURE);
+    }
+    return 0;
 }
