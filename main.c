@@ -109,10 +109,13 @@ int main(int argc, char *argv[])
 
     printf("Главный процесс: %d\n", getpid());
 
-    sharedArgs.rCallsCount -= 1;
-
     //Первый дочерний процесс, сортировка запускается в нём
     int childProcess = createChildProcess(&sharedArgs);
+    if(childProcess == -1)
+    {
+        perror("Error creating child process");
+        exit(EXIT_FAILURE);
+    }
     if(childProcess == 0){
         quickSort(&shMem[arrayBeginIndex], 0, arrayLength, &sharedArgs);
     }
@@ -120,13 +123,8 @@ int main(int argc, char *argv[])
 
     //Продолжение работы главного процесса
     else{
-        printf("Main rCallsCount: %d\n", sharedArgs.rCallsCount);
         int status;
-        printf("shMem[0] %d\nКол-во процессов %d\n", shMem[0], (MAX_PROC - shMem[0]));
-        lockSemaphore(semId);
-        while(shMem[0] < MAX_PROC)
-        {
-            unlockSemaphore(semId);
+        for(int i = 0; i < MAX_PROC; i++){
             wait(&status);
         }
 
@@ -155,37 +153,44 @@ int main(int argc, char *argv[])
 //Создание нового процесса
 int createChildProcess(SharedArgs *sharedArgs)
 {
+    printf("Процесс: %d создаёт новый дочерний\n", getpid());
     //Захват семафора
     lockSemaphore(*sharedArgs->semId);
+    if(sharedArgs->shMem[0] > 0){
+        //Уменьшаем счётчик процессов на один
+        sharedArgs->shMem[0] -= 1;
 
-    //Уменьшаем счётчик процессов на один
-    sharedArgs->shMem[0] -= 1;
+        pid_t newProcess = fork();
 
-    pid_t newProcess = fork();
-
-    //Дочерний процесс
-    if(newProcess == 0){
-        //Записываем Id процесса в общую память
-        for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
-            if(sharedArgs->shMem[i] == 0){
-                sharedArgs->shMem[i] = newProcess;
-                break;
+        //Дочерний процесс
+        if(newProcess == 0){
+            //Записываем Id процесса в общую память
+            for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
+                if(sharedArgs->shMem[i] == 0){
+                    sharedArgs->shMem[i] = newProcess;
+                    break;
+                }
             }
+            sharedArgs->rCallsCount = *sharedArgs->MAX_R_CALLS;
+            return(0);
         }
-        sharedArgs->rCallsCount = *sharedArgs->MAX_R_CALLS;
-        return(0);
-    }
 
-    //Родительский процесс
-    else if(newProcess > 0){
+        //Родительский процесс
+        else if(newProcess > 0){
+            //Разблокировка семафора
+            unlockSemaphore(*sharedArgs->semId);
+            return(1);
+        }
+
+        else{
+            perror("Error fork");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else{
         //Разблокировка семафора
         unlockSemaphore(*sharedArgs->semId);
-        return(1);
-    }
-
-    else{
-        perror("Error fork");
-        exit(EXIT_FAILURE);
+        return(-1);
     }
 }
 
@@ -218,7 +223,10 @@ void swap(int *a, int *b)
 //Быстрая сортировка
 void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
 {
+    printf("Процесс: %d начал сортировку first: %d last: %d rCallsCount: %d\n", getpid(), first, last, sharedArgs->rCallsCount);
+    //Уменьшение счётчика рекурсивных вызовов
     sharedArgs->rCallsCount -= 1;
+
     int l = first;
     int r = last;
     int pivot = array[(first + last) / 2];
@@ -241,38 +249,50 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
     }
     while(l <= r);
 
-
+//Правая сторона массива
     if(l < last){
-        quickSort(array, l, last, sharedArgs);
+        if(sharedArgs->rCallsCount == 0){
+            int newChildProcess = createChildProcess(sharedArgs);
+            if(newChildProcess == 0 || newChildProcess == -1){
+                quickSort(array, l, last, sharedArgs);
+            }
+        }
+        else{
+            quickSort(array, l, last, sharedArgs);
+        }
     }
+
+//Левая сторона массива
     if(first < r){
         quickSort(array, first, r, sharedArgs);
     }
+
     sharedArgs->rCallsCount += 1;
-    if(sharedArgs->rCallsCount == *sharedArgs->MAX_R_CALLS)
-    {
+
+    //Завершение процесса при достижении места, откуда он стартовал
+    if(sharedArgs->rCallsCount == *sharedArgs->MAX_R_CALLS){
         stopChildProcess(sharedArgs);
         printf("Дочерний процесс завершен\n");
         exit(EXIT_SUCCESS);
     }
 }
 
+//Блокировка семафора
 int lockSemaphore(int semId)
 {
     //Захват семафора
-    if(semop(semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0)
-    {
+    if(semop(semId, &lock, sizeof(lock) / sizeof(struct sembuf)) < 0){
         perror("Error semop");
         exit(EXIT_FAILURE);
     }
     return 0;
 }
 
+//Разблокировка семафора
 int unlockSemaphore(int semId)
 {
     //Разблокировка семафора
-    if(semop(semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0)
-    {
+    if(semop(semId, &unlock, sizeof(unlock) / sizeof(struct sembuf)) < 0){
         perror("Error semop");
         exit(EXIT_FAILURE);
     }
