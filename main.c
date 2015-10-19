@@ -111,31 +111,36 @@ int main(int argc, char *argv[])
 
     //Первый дочерний процесс, сортировка запускается в нём
     int childProcess = createChildProcess(&sharedArgs);
-    if(childProcess == -1)
-    {
-        perror("Error creating child process");
-        exit(EXIT_FAILURE);
-    }
+
     if(childProcess == 0){
         quickSort(&shMem[arrayBeginIndex], 0, arrayLength, &sharedArgs);
     }
-/////////////////////////////////////////////////////////////////////////////////
 
     //Продолжение работы главного процесса
     else{
-        int status;
-        for(int i = 0; i < MAX_PROC; i++){
-            wait(&status);
-        }
 
-        printf("Дождались завершения дочерних процессов\n");
-
-        //Массив после сортировки
-        printf("Массив после сортировки: \n");
-        for(int i = arrayBeginIndex; i < (arrayBeginIndex + arrayLength); i++){
-            printf("%d ", shMem[i]);
+        //Ошибка: не удалось создать первый дочерний процесс
+        if(childProcess == -1){
+            perror("Error creating first child process");
         }
-        printf("\n");
+        else{
+
+            //Ожидание дочерних процессов
+            int status;
+            for(int i = 0; i < MAX_PROC; i++){
+                wait(&status);
+            }
+
+            printf("Дождались завершения дочерних процессов\n");
+
+            //Массив после сортировки
+            printf("Массив после сортировки: \n");
+            for(int i = arrayBeginIndex; i < (arrayBeginIndex + arrayLength); i++){
+                printf("%d ", shMem[i]);
+            }
+            printf("\n");
+
+        }
 
         //Уничтожение семафора
         if(semctl(semId, 0, IPC_RMID) < 0){
@@ -153,7 +158,7 @@ int main(int argc, char *argv[])
 //Создание нового процесса
 int createChildProcess(SharedArgs *sharedArgs)
 {
-    printf("Процесс: %d создаёт новый дочерний\n", getpid());
+    printf("Процесс: %d пытается создать новый дочерний\n", getpid());
     //Захват семафора
     lockSemaphore(*sharedArgs->semId);
     if(sharedArgs->shMem[0] > 0){
@@ -172,25 +177,27 @@ int createChildProcess(SharedArgs *sharedArgs)
                 }
             }
             sharedArgs->rCallsCount = *sharedArgs->MAX_R_CALLS;
-            return(0);
+            return 0;
         }
 
         //Родительский процесс
         else if(newProcess > 0){
             //Разблокировка семафора
             unlockSemaphore(*sharedArgs->semId);
-            return(1);
+            return 1;
         }
-
+        //Возвращение -1 при ошибке вызова fork() !!!
         else{
             perror("Error fork");
-            exit(EXIT_FAILURE);
+            return -1;
         }
     }
+
+    //Если уже достигнуто максимальное количество процессов
     else{
         //Разблокировка семафора
         unlockSemaphore(*sharedArgs->semId);
-        return(-1);
+        return -1;
     }
 }
 
@@ -251,15 +258,7 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
 
 //Правая сторона массива
     if(l < last){
-        if(sharedArgs->rCallsCount == 0){
-            int newChildProcess = createChildProcess(sharedArgs);
-            if(newChildProcess == 0 || newChildProcess == -1){
-                quickSort(array, l, last, sharedArgs);
-            }
-        }
-        else{
-            quickSort(array, l, last, sharedArgs);
-        }
+        quickSort(array, l, last, sharedArgs);
     }
 
 //Левая сторона массива
