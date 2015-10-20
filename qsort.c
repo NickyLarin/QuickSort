@@ -6,8 +6,7 @@
 
 
 #ifndef SHARED_ARGS_H
-    struct SharedArgs
-    {
+    struct SharedArgs{
         int *shMem;
         int *semId;
         int *MAX_PROC;
@@ -21,8 +20,7 @@
 void swap(int *a, int *b);
 
 // Быстрая сортировка
-void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
-{
+void quickSort(int *array, int first, int last, SharedArgs *sharedArgs){
     printf("Процесс: %d начал сортировку first: %d last: %d rCallsCount: %d\n", getpid(), first, last, sharedArgs->rCallsCount);
     // Уменьшение счётчика рекурсивных вызовов
     sharedArgs->rCallsCount -= 1;
@@ -95,8 +93,7 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
     }
 }
 
-void swap(int *a, int *b)
-{
+void swap(int *a, int *b){
     int temp = *a;
     *a = *b;
     *b = temp;

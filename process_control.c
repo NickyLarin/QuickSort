@@ -5,8 +5,7 @@
 #include "semaphore_control.h"
 
 #ifndef SHARED_ARGS_H
-    struct SharedArgs
-    {
+    struct SharedArgs{
         int *shMem;
         int *semId;
         int *MAX_PROC;
@@ -18,8 +17,7 @@
 #endif
 
 // Создание нового процесса
-int createChildProcess(SharedArgs *sharedArgs)
-{
+int createChildProcess(SharedArgs *sharedArgs){
     printf("Процесс: %d пытается создать новый дочерний\n", getpid());
     // Захват семафора
     lockSemaphore(*sharedArgs->semId);
@@ -65,8 +63,7 @@ int createChildProcess(SharedArgs *sharedArgs)
 }
 
 // Завершение работы дочернего процесса
-void stopChildProcess(SharedArgs *sharedArgs)
-{
+void stopChildProcess(SharedArgs *sharedArgs){
     // Захват семафора
     lockSemaphore(*sharedArgs->semId);
 

@@ -14,10 +14,10 @@
 #include "qsort.h"
 #include "process_control.h"
 #include "semaphore_control.h"
+#include "readline.h"
 
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]){
     // Проверка аргументов
     if(argc < 3){
         errno = EINVAL;  // Invalid argument
@@ -30,17 +30,40 @@ int main(int argc, char *argv[])
     // Максимальное количество рекурсивных вызовов - 2й аргумент
     int MAX_R_CALLS = atoi(argv[2]);
 
+    // Чтение входных данных из файла
+    int arraySize = 4096;
+    int *array = (int *)malloc(sizeof(int)*arraySize);
+    int arrayLength = 0;
 
-    // Массив для сортировки
-    int array[] = {11, 42, 2, 145, 33, 60, 25, 28, 8, 7, 49, 12, 24, -1, 15, 91, 20, 29, 2, 20};
+    const char separator[] = " ";
 
+    FILE *fptr;
+    fptr = fopen("input.txt", "r");
+    
+    while(!feof(fptr)){
+        char *line = readLine(fptr);
+        char *ch = strtok(line, separator);
+        while(ch != NULL){
+            if(arrayLength == arraySize){
+                arraySize *= 2;
+                array = realloc(array, arraySize);
+            }
+            else{
+                int temp = atoi(ch);
+                array[arrayLength] = temp;
+                arrayLength++;
+            }
+            ch = strtok(NULL, separator);
+        }
+        free(line);
+    }
+    fclose(fptr);
 
     // Выделение shared memory
     // Счётчик процессов(int), IDs дочерних процессов(int), Размер массива(int), Массив(int)
-    int sizeOfShMem = sizeof(int) + (sizeof(pid_t)*MAX_PROC) + sizeof(array);
+    int sizeOfShMem = sizeof(int) + (sizeof(pid_t)*MAX_PROC) + sizeof(int)*arrayLength;
 
-    int arrayBeginIndex = (0 + sizeOfShMem - sizeof(array))/sizeof(array[0]);
-    int arrayLength = sizeof(array)/sizeof(array[0]);
+    int arrayBeginIndex = (0 + sizeOfShMem - sizeof(int)*arrayLength) / sizeof(int);
 
     int shMemId = shmget(IPC_PRIVATE, sizeOfShMem, SHM_W | SHM_R | IPC_CREAT);
     if(shMemId < 0){
@@ -55,7 +78,8 @@ int main(int argc, char *argv[])
     shMem[0] = MAX_PROC;
 
     // Копирование массива для сортировки в shmem
-    memcpy(&shMem[arrayBeginIndex], array, sizeof(array));
+    memcpy(&shMem[arrayBeginIndex], array, sizeof(int)*arrayLength);
+    free(array);
 
     // Создание семафора
     int semId = semget(IPC_PRIVATE, 1, IPC_CREAT | IPC_EXCL | 0644);
@@ -64,7 +88,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Инициализация семафора нулём
+    // Инициализация семафора единицей
     if(semctl(semId, 0, SETVAL, 1) < 0){
         perror("Error semaphore setval");
         exit(EXIT_FAILURE);
