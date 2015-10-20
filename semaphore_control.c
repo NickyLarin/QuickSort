@@ -5,7 +5,7 @@
 struct sembuf lock = {0, -1, SEM_UNDO};
 struct sembuf unlock = {0, 1, SEM_UNDO};
 
-//Блокировка семафора
+// Блокировка семафора
 int lockSemaphore(int semId)
 {
     //Захват семафора
@@ -16,7 +16,7 @@ int lockSemaphore(int semId)
     return 0;
 }
 
-//Разблокировка семафора
+// Разблокировка семафора
 int unlockSemaphore(int semId)
 {
     //Разблокировка семафора

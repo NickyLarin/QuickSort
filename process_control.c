@@ -17,56 +17,57 @@
     #define SHARED_ARGS_H
 #endif
 
-//Создание нового процесса
+// Создание нового процесса
 int createChildProcess(SharedArgs *sharedArgs)
 {
     printf("Процесс: %d пытается создать новый дочерний\n", getpid());
-    //Захват семафора
+    // Захват семафора
     lockSemaphore(*sharedArgs->semId);
     if(sharedArgs->shMem[0] > 0){
-        //Уменьшаем счётчик процессов на один
+        // Уменьшаем счётчик процессов на один
         sharedArgs->shMem[0] -= 1;
 
         pid_t newProcess = fork();
 
-        //Дочерний процесс
+        // Дочерний процесс
         if(newProcess == 0){
-            //Записываем Id процесса в общую память
-            for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
-                if(sharedArgs->shMem[i] == 0){
-                    sharedArgs->shMem[i] = newProcess;
-                    break;
-                }
-            }
             sharedArgs->rCallsCount = *sharedArgs->MAX_R_CALLS;
             return 0;
         }
 
-        //Родительский процесс
+        // Родительский процесс
         else if(newProcess > 0){
-            //Разблокировка семафора
+            // Записываем Id процесса в общую память
+            for(int i = 1; i < (1 + *sharedArgs->MAX_PROC); i++){
+                if(sharedArgs->shMem[i] == 0){
+                    sharedArgs->shMem[i] = newProcess;
+                    printf("Процесс %d записан в ячейку %d\n", newProcess, i);
+                    break;
+                }
+            }
+            // Разблокировка семафора
             unlockSemaphore(*sharedArgs->semId);
-            return 1;
+            return newProcess;
         }
-        //Возвращение -1 при ошибке вызова fork() !!!
+        // Возвращение -1 при ошибке вызова fork() !!!
         else{
             perror("Error fork");
             return -1;
         }
     }
 
-    //Если уже достигнуто максимальное количество процессов
+    // Если уже достигнуто максимальное количество процессов
     else{
-        //Разблокировка семафора
+        // Разблокировка семафора
         unlockSemaphore(*sharedArgs->semId);
         return -1;
     }
 }
 
-//Завершение работы дочернего процесса
+// Завершение работы дочернего процесса
 void stopChildProcess(SharedArgs *sharedArgs)
 {
-    //Захват семафора
+    // Захват семафора
     lockSemaphore(*sharedArgs->semId);
 
     sharedArgs->shMem[0] += 1;
@@ -78,6 +79,7 @@ void stopChildProcess(SharedArgs *sharedArgs)
         }
     }
 
-    //Разблокировка семафора
+    // Разблокировка семафора
     unlockSemaphore(*sharedArgs->semId);
+    printf("Дочерний процесс: %d завершен\n", currentPId);
 }

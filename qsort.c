@@ -20,11 +20,11 @@
 
 void swap(int *a, int *b);
 
-//Быстрая сортировка
+// Быстрая сортировка
 void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
 {
     printf("Процесс: %d начал сортировку first: %d last: %d rCallsCount: %d\n", getpid(), first, last, sharedArgs->rCallsCount);
-    //Уменьшение счётчика рекурсивных вызовов
+    // Уменьшение счётчика рекурсивных вызовов
     sharedArgs->rCallsCount -= 1;
 
     int l = first;
@@ -51,7 +51,7 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
 
     if(sharedArgs->rCallsCount == 0){
 
-    //Правая сторона при достижении максимального количества рекурсивных вызовов
+    // Правая сторона при достижении максимального количества рекурсивных вызовов
         if(l < last){
             int newChildProcess = createChildProcess(sharedArgs);
             if(newChildProcess == 0){
@@ -63,7 +63,7 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
             }
         }
 
-    //Левая сторона при достижении максимального количества рекурсивных вызовов
+    // Левая сторона при достижении максимального количества рекурсивных вызовов
         if(first < r){
             int newChildProcess = createChildProcess(sharedArgs);
             if(newChildProcess == 0){
@@ -76,22 +76,21 @@ void quickSort(int *array, int first, int last, SharedArgs *sharedArgs)
         }
     }
     else{
-        //Правая сторона массива
+        // Правая сторона массива
         if(l < last){
             quickSort(array, l, last, sharedArgs);
         }
 
-        //Левая сторона массива
+        // Левая сторона массива
         if(first < r){
             quickSort(array, first, r, sharedArgs);
         }
     }
 
     sharedArgs->rCallsCount += 1;
-    //Завершение родительского процесса при достижении места, откуда он стартовал
+    // Завершение родительского процесса при достижении места, откуда он стартовал
     if(sharedArgs->rCallsCount == *sharedArgs->MAX_R_CALLS){
         stopChildProcess(sharedArgs);
-        printf("Дочерний процесс завершен\n");
         exit(EXIT_SUCCESS);
     }
 }

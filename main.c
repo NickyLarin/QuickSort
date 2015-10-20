@@ -1,15 +1,15 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/sem.h>
 #include <errno.h>
-#include <string.h>
+#include <unistd.h>
 
 #include "qsort.h"
 #include "process_control.h"
@@ -18,25 +18,25 @@
 
 int main(int argc, char *argv[])
 {
-    //Проверка аргументов
+    // Проверка аргументов
     if(argc < 3){
-        errno = EINVAL;  //Invalid argument
+        errno = EINVAL;  // Invalid argument
         perror("Error arguments");
         exit(EXIT_FAILURE);
     }
 
-    //Максимальное количество процессов - 1й аргумент
+    // Максимальное количество процессов - 1й аргумент
     int MAX_PROC = atoi(argv[1]);
-    //Максимальное количество рекурсивных вызовов - 2й аргумент
+    // Максимальное количество рекурсивных вызовов - 2й аргумент
     int MAX_R_CALLS = atoi(argv[2]);
 
 
-    //Массив для сортировки
+    // Массив для сортировки
     int array[] = {11, 42, 2, 145, 33, 60, 25, 28, 8, 7, 49, 12, 24, -1, 15, 91, 20, 29, 2, 20};
 
 
-    //Выделение shared memory
-    //Счётчик процессов(int), IDs дочерних процессов(int), Размер массива(int), Массив(int)
+    // Выделение shared memory
+    // Счётчик процессов(int), IDs дочерних процессов(int), Размер массива(int), Массив(int)
     int sizeOfShMem = sizeof(int) + (sizeof(pid_t)*MAX_PROC) + sizeof(array);
 
     int arrayBeginIndex = (0 + sizeOfShMem - sizeof(array))/sizeof(array[0]);
@@ -48,38 +48,30 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    //Привязка shmem к процессу
+    // Привязка shmem к процессу
     int *shMem = (int *)shmat(shMemId, NULL, 0);
 
-    //Счётчик процессов - первая "ячейка" shMem
+    // Счётчик процессов - первая "ячейка" shMem
     shMem[0] = MAX_PROC;
 
-/*
-    //Инициализация списка массива процессов
-    for(int i = 1; i < (1 + MAX_PROC); i++)
-    {
-        shMem[i] = 0;
-    }
-*/
-
-    //Копирование массива для сортировки в shmem
+    // Копирование массива для сортировки в shmem
     memcpy(&shMem[arrayBeginIndex], array, sizeof(array));
 
-    //Создание семафора
+    // Создание семафора
     int semId = semget(IPC_PRIVATE, 1, IPC_CREAT | IPC_EXCL | 0644);
     if(semId < 0){
         perror("Error semaphore get");
         exit(EXIT_FAILURE);
     }
 
-    //Инициализация семафора нулём
+    // Инициализация семафора нулём
     if(semctl(semId, 0, SETVAL, 1) < 0){
         perror("Error semaphore setval");
         exit(EXIT_FAILURE);
     }
 
 
-    //Первоначальный массив в shmem
+    // Первоначальный массив в shmem
     for(int i = arrayBeginIndex; i < (arrayBeginIndex + arrayLength); i++){
         printf("%d ", shMem[i]);
     }
@@ -95,35 +87,53 @@ int main(int argc, char *argv[])
 
     printf("Главный процесс: %d\n", getpid());
 
-    //Первый дочерний процесс, сортировка запускается в нём
+    // Первый дочерний процесс, сортировка запускается в нём
     int firstChildProcess = createChildProcess(&sharedArgs);
 
     if(firstChildProcess == 0){
         quickSort(&shMem[arrayBeginIndex], 0, arrayLength, &sharedArgs);
     }
 
-    //Продолжение работы главного процесса
+    // Продолжение работы главного процесса
     else{
 
-        //Ошибка: не удалось создать первый дочерний процесс
+        // Ошибка: не удалось создать первый дочерний процесс
         if(firstChildProcess == -1){
             perror("Error creating first child process");
         }
         else{
-/*
-            printf("IDs дочерних процессов\n");
-            for(int i = 1; i < (1 + MAX_PROC); i++){
-                printf("%d ", shMem[i]);
-            }
-            printf("\n");
-*/
-            //Ожидание дочерних процессов
-            int status;
-            waitpid(firstChildProcess, &status, 0);
+
+            // Ожидание дочерних процессов
+            printf("Начинаем ожидание процесса: %d\n", firstChildProcess);
+            waitpid(firstChildProcess, 0, 0);
+            printf("Ожидание процесса: %d завершено\n", firstChildProcess);
+            
+            do{
+                printf("Начинаем ожидание остальных дочерних процессов\n");
+                lockSemaphore(semId);
+                if(shMem[0] == MAX_PROC){
+                    unlockSemaphore(semId);
+                    break;
+                }
+                else{
+                    printf("Cписок процессов\n");
+                    for(int i = 1; i < (1 + MAX_PROC); i++){
+                        printf("%d\n", shMem[i]);
+                        if(shMem[i] != 0){
+                            unlockSemaphore(semId);
+                            printf("Начинаем ожидание процесса: %d\n", shMem[i]);
+                            waitpid(shMem[i], 0, 0);
+                            printf("Ожидание процесса: %d завершено\n", shMem[i]);
+                            break;
+                        }
+                    }
+                }
+                
+            }while(1);
 
             printf("Дождались завершения дочерних процессов\n");
 
-            //Массив после сортировки
+            // Массив после сортировки
             printf("Массив после сортировки: \n");
             for(int i = arrayBeginIndex; i < (arrayBeginIndex + arrayLength); i++){
                 printf("%d ", shMem[i]);
@@ -132,12 +142,12 @@ int main(int argc, char *argv[])
 
         }
 
-        //Уничтожение семафора
+        // Уничтожение семафора
         if(semctl(semId, 0, IPC_RMID) < 0){
             perror("Error semaphore remove");
         }
 
-        //Отсоединение памяти и удаление сегмента
+        // Отсоединение памяти и удаление сегмента
         shmdt(shMem);
         shmctl(shMemId, IPC_RMID, NULL);
     }
