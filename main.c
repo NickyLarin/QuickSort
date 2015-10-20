@@ -96,9 +96,9 @@ int main(int argc, char *argv[])
     printf("Главный процесс: %d\n", getpid());
 
     //Первый дочерний процесс, сортировка запускается в нём
-    int childProcess = createChildProcess(&sharedArgs);
+    int firstChildProcess = createChildProcess(&sharedArgs);
 
-    if(childProcess == 0){
+    if(firstChildProcess == 0){
         quickSort(&shMem[arrayBeginIndex], 0, arrayLength, &sharedArgs);
     }
 
@@ -106,16 +106,20 @@ int main(int argc, char *argv[])
     else{
 
         //Ошибка: не удалось создать первый дочерний процесс
-        if(childProcess == -1){
+        if(firstChildProcess == -1){
             perror("Error creating first child process");
         }
         else{
-
+/*
+            printf("IDs дочерних процессов\n");
+            for(int i = 1; i < (1 + MAX_PROC); i++){
+                printf("%d ", shMem[i]);
+            }
+            printf("\n");
+*/
             //Ожидание дочерних процессов
             int status;
-            for(int i = 0; i < MAX_PROC; i++){
-                wait(&status);
-            }
+            waitpid(firstChildProcess, &status, 0);
 
             printf("Дождались завершения дочерних процессов\n");
 

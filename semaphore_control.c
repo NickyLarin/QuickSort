@@ -2,8 +2,8 @@
 #include <sys/sem.h>
 #include <stdlib.h>
 
-struct sembuf lock = {0, -1, 0};
-struct sembuf unlock = {0, 1, 0};
+struct sembuf lock = {0, -1, SEM_UNDO};
+struct sembuf unlock = {0, 1, SEM_UNDO};
 
 //Блокировка семафора
 int lockSemaphore(int semId)
